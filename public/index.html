@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>双人五子棋</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        canvas {
+            border: 1px solid #ccc;
+            background-color: #e0c9a6;
+            cursor: pointer;
+        }
+        .controls {
+            margin-top: 20px;
+        }
+        input[type="text"] {
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 8px 16px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #status {
+            margin: 10px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .player-info {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>双人五子棋</h1>
+        <div id="status">等待连接...</div>
+        <div class="player-info" id="playerInfo"></div>
+        <canvas id="chessboard" width="480" height="480"></canvas>
+        <div class="controls">
+            <input type="text" id="roomIdInput" placeholder="输入房间ID">
+            <button onclick="joinRoom()">加入房间</button>
+            <button onclick="createRoom()">创建房间</button>
+            <button onclick="resetGame()">重新开始</button>
+        </div>
+        <div id="gameInfo"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let board = Array(15).fill().map(() => Array(15).fill(null));
+        let currentPlayer = 'black';
+        let gameStarted = false;
+        let myColor = null;
+        let roomId = null;
+
+        const canvas = document.getElementById('chessboard');
+        const ctx = canvas.getContext('2d');
+
+        // 绘制棋盘
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制网格线
+            for (let i = 0; i < 15; i++) {
+                ctx.beginPath();
+                ctx.moveTo(20 + i * 30, 20);
+                ctx.lineTo(20 + i * 30, 440);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(20, 20 + i * 30);
+                ctx.lineTo(440, 20 + i * 30);
+                ctx.stroke();
+            }
+        }
+
+        // 绘制棋子
+        function drawChess(x, y, color) {
+            const centerX = 20 + x * 30;
+            const centerY = 20 + y * 30;
+
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 13, 0, Math.PI * 2);
+            ctx.fillStyle = color === 'black' ? 'black' : 'white';
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        // 检查胜利条件
+        function checkWin(x, y, color) {
+            const directions = [
+                [1, 0],   // 水平
+                [0, 1],   // 垂直
+                [1, 1],   // 对角线 \
+                [1, -1]   // 对角线 /
+            ];
+
+            for (let [dx, dy] of directions) {
+                let count = 1;
+                
+                // 正向检查
+                for (let i = 1; i <= 4; i++) {
+                    const newX = x + dx * i;
+                    const newY = y + dy * i;
+                    if (newX >= 0 && newX < 15 && newY >= 0 && newY < 15 && 
+                        board[newY][newX] === color) {
+                        count++;
+                    } else {
+                        break;
+                    }
+                }
+                
+                // 反向检查
+                for (let i = 1; i <= 4; i++) {
+                    const newX = x - dx * i;
+                    const newY = y - dy * i;
+                    if (newX >= 0 && newX < 15 && newY >= 0 && newY < 15 && 
+                        board[newY][newX] === color) {
+                        count++;
+                    } else {
+                        break;
+                    }
+                }
+                
+                if (count >= 5) return true;
+            }
+            return false;
+        }
+
+        // 点击事件处理
+        canvas.addEventListener('click', (e) => {
+            if (!gameStarted || currentPlayer !== myColor) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.round((e.clientX - rect.left - 20) / 30);
+            const y = Math.round((e.clientY - rect.top - 20) / 30);
+
+            if (x >= 0 && x < 15 && y >= 0 && y < 15 && !board[y][x]) {
+                // 下棋
+                board[y][x] = myColor;
+                drawChess(x, y, myColor);
+
+                // 检查胜利
+                if (checkWin(x, y, myColor)) {
+                    document.getElementById('status').innerText = `${myColor === 'black' ? '黑子' : '白子'} 获胜！`;
+                    socket.emit('game_over', { winner: myColor, roomId });
+                    gameStarted = false;
+                    return;
+                }
+
+                // 切换玩家
+                currentPlayer = myColor === 'black' ? 'white' : 'black';
+                document.getElementById('status').innerText = `等待对手落子...`;
+                
+                // 发送移动到服务器
+                socket.emit('make_move', {
+                    x: x,
+                    y: y,
+                    color: myColor,
+                    roomId: roomId
+                });
+            }
+        });
+
+        // 加入房间
+        function joinRoom() {
+            const inputRoomId = document.getElementById('roomIdInput').value.trim();
+            if (!inputRoomId) {
+                alert('请输入房间ID');
+                return;
+            }
+            
+            roomId = inputRoomId;
+            socket.emit('join_room', roomId);
+        }
+
+        // 创建房间
+        function createRoom() {
+            roomId = 'room_' + Date.now();
+            document.getElementById('roomIdInput').value = roomId;
+            socket.emit('join_room', roomId);
+        }
+
+        // 重置游戏
+        function resetGame() {
+            board = Array(15).fill().map(() => Array(15).fill(null));
+            drawBoard();
+            gameStarted = false;
+            currentPlayer = 'black';
+            document.getElementById('status').innerText = '游戏重置，等待对手加入...';
+        }
+
+        // Socket事件监听
+        socket.on('connect', () => {
+            document.getElementById('status').innerText = '已连接到服务器';
+        });
+
+        socket.on('player_assigned', (data) => {
+            myColor = data.player;
+            document.getElementById('playerInfo').innerText = `你是: ${myColor === 'black' ? '黑子' : '白子'}`;
+        });
+
+        socket.on('game_start', (data) => {
+            gameStarted = true;
+            if (myColor === 'white') {
+                currentPlayer = 'white';
+            }
+            document.getElementById('status').innerText = '游戏开始！';
+        });
+
+        socket.on('opponent_move', (data) => {
+            board[data.y][data.x] = data.color;
+            drawChess(data.x, data.y, data.color);
+            
+            if (checkWin(data.x, data.y, data.color)) {
+                document.getElementById('status').innerText = `${data.color === 'black' ? '黑子' : '白子'} 获胜！`;
+                gameStarted = false;
+            } else {
+                currentPlayer = data.color === 'black' ? 'white' : 'black';
+                document.getElementById('status').innerText = `轮到你落子！`;
+            }
+        });
+
+        socket.on('game_ended', (winner) => {
+            document.getElementById('status').innerText = `${winner === 'black' ? '黑子' : '白子'} 获胜！`;
+            gameStarted = false;
+        });
+
+        socket.on('opponent_disconnected', () => {
+            document.getElementById('status').innerText = '对手已离开，游戏结束';
+            gameStarted = false;
+        });
+
+        socket.on('update_status', (msg) => {
+            document.getElementById('status').innerText = msg;
+        });
+
+        // 初始化
+        drawBoard();
+    </script>
+</body>
+</html>
