@@ -61,7 +61,6 @@
         <h1>双人五子棋</h1>
         <div id="status">等待连接...</div>
         <div class="player-info" id="playerInfo"></div>
-        <!-- 关键修改1：棋盘尺寸从480x480改为620x620（适应19x19棋盘） -->
         <canvas id="chessboard" width="620" height="620"></canvas>
         <div class="controls">
             <input type="text" id="roomIdInput" placeholder="输入房间ID">
@@ -75,7 +74,6 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        // 关键修改2：棋盘大小从15x15改为19x19
         const BOARD_SIZE = 19; // 19x19棋盘
         let board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(null));
         let currentPlayer = null;
@@ -83,13 +81,11 @@
         let myColor = null;
         let roomId = null;
         let gameEnded = false;
-        // 关键修改3：存储胜利的5个坐标
-        let winPositions = [];
+        let winPositions = []; // 存储胜利坐标
 
         const canvas = document.getElementById('chessboard');
         const ctx = canvas.getContext('2d');
 
-        // 绘制棋盘（关键修改：19x19网格）
         function drawBoard() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -106,7 +102,6 @@
             }
         }
 
-        // 绘制棋子（保持原有大小）
         function drawChess(x, y, color) {
             const centerX = 20 + x * 30;
             const centerY = 20 + y * 30;
@@ -120,7 +115,6 @@
             ctx.stroke();
         }
 
-        // 检查胜利条件（关键修改：存储胜利坐标）
         function checkWin(x, y, color) {
             const directions = [
                 [1, 0],   // 水平
@@ -129,13 +123,12 @@
                 [1, -1]   // 对角线 /
             ];
             
-            winPositions = []; // 重置
+            winPositions = [];
 
             for (let [dx, dy] of directions) {
                 let count = 1;
                 let positions = [[x, y]];
                 
-                // 正方向
                 for (let i = 1; i <= 4; i++) {
                     const newX = x + dx * i;
                     const newY = y + dy * i;
@@ -148,7 +141,6 @@
                     }
                 }
                 
-                // 反方向
                 for (let i = 1; i <= 4; i++) {
                     const newX = x - dx * i;
                     const newY = y - dy * i;
@@ -169,13 +161,12 @@
             return false;
         }
 
-        // 关键修改4：高亮胜利的5子连珠
+        // 关键修复1：高亮胜利的5子连珠（使用全局winPositions）
         function showWinEffect() {
             winPositions.forEach(([x, y]) => {
                 const centerX = 20 + x * 30;
                 const centerY = 20 + y * 30;
                 
-                // 高亮5子连珠
                 ctx.beginPath();
                 ctx.arc(centerX, centerY, 16, 0, Math.PI * 2);
                 ctx.strokeStyle = '#FFD700';
@@ -184,7 +175,6 @@
             });
         }
 
-        // 更新状态显示
         function updateStatus() {
             if (gameEnded) {
                 document.getElementById('status').innerText = '游戏已结束';
@@ -198,7 +188,6 @@
             }
         }
 
-        // 点击事件处理（关键修改：19x19坐标计算）
         canvas.addEventListener('click', (e) => {
             if (!gameStarted || !currentPlayer || currentPlayer !== myColor || gameEnded) return;
 
@@ -206,7 +195,6 @@
             const x = Math.round((e.clientX - rect.left - 20) / 30);
             const y = Math.round((e.clientY - rect.top - 20) / 30);
 
-            // 修正：确保坐标在0-18范围内
             if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE && !board[y][x]) {
                 board[y][x] = myColor;
                 drawChess(x, y, myColor);
@@ -214,12 +202,15 @@
                 if (checkWin(x, y, myColor)) {
                     document.getElementById('status').innerText = `${myColor === 'black' ? '黑子' : '白子'} 获胜！`;
                     gameEnded = true;
-                    showWinEffect(); // 显示高亮特效
-                    socket.emit('game_over', { winner: myColor, roomId });
+                    // 关键修复2：发送winPositions到服务器
+                    socket.emit('game_over', { 
+                        winner: myColor, 
+                        roomId, 
+                        winPositions: winPositions // 传递胜利坐标
+                    });
                     return;
                 }
 
-                // 切换玩家
                 currentPlayer = myColor === 'black' ? 'white' : 'black';
                 updateStatus();
                 
@@ -232,7 +223,6 @@
             }
         });
 
-        // 加入房间
         function joinRoom() {
             const inputRoomId = document.getElementById('roomIdInput').value.trim();
             if (!inputRoomId) {
@@ -244,14 +234,12 @@
             socket.emit('join_room', roomId);
         }
 
-        // 创建房间
         function createRoom() {
             roomId = 'room_' + Date.now();
             document.getElementById('roomIdInput').value = roomId;
             socket.emit('join_room', roomId);
         }
 
-        // 重置游戏
         function resetGame() {
             board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(null));
             drawBoard();
@@ -261,7 +249,6 @@
             updateStatus();
         }
 
-        // Socket事件监听
         socket.on('connect', () => {
             document.getElementById('status').innerText = '已连接到服务器';
         });
@@ -270,7 +257,6 @@
             myColor = data.player;
             document.getElementById('playerInfo').innerText = `你是: ${myColor === 'black' ? '黑子' : '白子'}`;
             
-            // 黑方先手
             if (myColor === 'black') {
                 currentPlayer = 'black';
             } else {
@@ -290,16 +276,20 @@
             if (checkWin(data.x, data.y, data.color)) {
                 document.getElementById('status').innerText = `${data.color === 'black' ? '黑子' : '白子'} 获胜！`;
                 gameEnded = true;
-                showWinEffect(); // 显示高亮特效
+                // 关键修复3：在对手客户端也高亮
+                winPositions = data.winPositions; // 从服务器获取胜利坐标
+                showWinEffect();
             } else {
                 currentPlayer = myColor;
                 updateStatus();
             }
         });
 
-        socket.on('game_ended', (winner) => {
-            document.getElementById('status').innerText = `${winner === 'black' ? '黑子' : '白子'} 获胜！`;
+        socket.on('game_ended', (data) => {
+            document.getElementById('status').innerText = `${data.winner === 'black' ? '黑子' : '白子'} 获胜！`;
             gameEnded = true;
+            // 确保使用传递的winPositions
+            winPositions = data.winPositions;
             showWinEffect();
         });
 
@@ -312,7 +302,6 @@
             document.getElementById('status').innerText = msg;
         });
 
-        // 初始化
         drawBoard();
     </script>
 </body>
