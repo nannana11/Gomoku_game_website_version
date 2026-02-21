@@ -5,71 +5,54 @@
     <title>双人五子棋</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: Arial, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
-            background: #f0f0f0;
+            background-color: #f0f0f0;
         }
         .container {
             text-align: center;
             background: white;
-            padding: 25px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            width: 90%;
-            max-width: 650px;
-        }
-        h1 {
-            color: #2c3e50;
-            margin-bottom: 20px;
-            font-size: 2.2rem;
-        }
-        #status {
-            font-size: 1.4rem;
-            font-weight: bold;
-            margin: 15px 0;
-            padding: 12px;
+            padding: 20px;
             border-radius: 10px;
-            background: #e8f4fd;
-            color: #2c3e50;
-            min-height: 40px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
         canvas {
-            border: 2px solid #2c3e50;
+            border: 1px solid #ccc;
             background-color: #e0c9a6;
             cursor: pointer;
-            border-radius: 8px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
         .controls {
-            margin-top: 25px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
+            margin-top: 20px;
         }
         input[type="text"] {
-            padding: 12px 15px;
-            border: 2px solid #3498db;
-            border-radius: 8px;
-            font-size: 1.1rem;
-            width: 100%;
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
         }
         button {
-            padding: 14px 25px;
+            padding: 8px 16px;
+            margin: 5px;
             border: none;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #3498db, #2c3e50);
+            border-radius: 4px;
+            background-color: #4CAF50;
             color: white;
-            font-size: 1.1rem;
             cursor: pointer;
-            transition: all 0.3s;
         }
         button:hover {
-            transform: translateY(-3px);
-            background: linear-gradient(135deg, #2c3e50, #1a254a);
+            background-color: #45a049;
+        }
+        #status {
+            margin: 10px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .player-info {
+            margin: 10px 0;
         }
     </style>
 </head>
@@ -77,62 +60,56 @@
     <div class="container">
         <h1>双人五子棋</h1>
         <div id="status">等待连接...</div>
+        <div class="player-info" id="playerInfo"></div>
+        <!-- 关键修改1：棋盘尺寸从480x480改为620x620（适应19x19棋盘） -->
         <canvas id="chessboard" width="620" height="620"></canvas>
         <div class="controls">
-            <input type="text" id="roomIdInput" placeholder="房间ID">
+            <input type="text" id="roomIdInput" placeholder="输入房间ID">
             <button onclick="joinRoom()">加入房间</button>
             <button onclick="createRoom()">创建房间</button>
+            <button onclick="resetGame()">重新开始</button>
         </div>
+        <div id="gameInfo"></div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // 修复连接问题：添加连接错误处理
         const socket = io();
-        socket.on('connect_error', (err) => {
-            document.getElementById('status').innerText = `连接错误: ${err.message}`;
-            console.error('Socket连接错误:', err);
-        });
-
-        // 关键修改1：棋盘格子数从15x15改为19x19
+        // 关键修改2：棋盘大小从15x15改为19x19
         const BOARD_SIZE = 19; // 19x19棋盘
-        const GRID_SIZE = 30;   // 格子间距保持30px（不增大格子，只增加格子数量）
-        const BOARD_OFFSET = 20; // 边距
-
         let board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(null));
         let currentPlayer = null;
         let gameStarted = false;
         let myColor = null;
         let roomId = null;
         let gameEnded = false;
+        // 关键修改3：存储胜利的5个坐标
         let winPositions = [];
 
         const canvas = document.getElementById('chessboard');
         const ctx = canvas.getContext('2d');
-        const statusElement = document.getElementById('status');
 
-        // 绘制棋盘（关键修改：19x19）
+        // 绘制棋盘（关键修改：19x19网格）
         function drawBoard() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // 绘制19x19网格
             for (let i = 0; i < BOARD_SIZE; i++) {
                 ctx.beginPath();
-                ctx.moveTo(BOARD_OFFSET + i * GRID_SIZE, BOARD_OFFSET);
-                ctx.lineTo(BOARD_OFFSET + i * GRID_SIZE, canvas.height - BOARD_OFFSET);
+                ctx.moveTo(20 + i * 30, 20);
+                ctx.lineTo(20 + i * 30, canvas.height - 20);
                 ctx.stroke();
 
                 ctx.beginPath();
-                ctx.moveTo(BOARD_OFFSET, BOARD_OFFSET + i * GRID_SIZE);
-                ctx.lineTo(canvas.width - BOARD_OFFSET, BOARD_OFFSET + i * GRID_SIZE);
+                ctx.moveTo(20, 20 + i * 30);
+                ctx.lineTo(canvas.width - 20, 20 + i * 30);
                 ctx.stroke();
             }
         }
 
         // 绘制棋子（保持原有大小）
         function drawChess(x, y, color) {
-            const centerX = BOARD_OFFSET + x * GRID_SIZE;
-            const centerY = BOARD_OFFSET + y * GRID_SIZE;
+            const centerX = 20 + x * 30;
+            const centerY = 20 + y * 30;
 
             ctx.beginPath();
             ctx.arc(centerX, centerY, 13, 0, Math.PI * 2);
@@ -143,7 +120,7 @@
             ctx.stroke();
         }
 
-        // 检查胜利条件（关键修改：19x19棋盘）
+        // 检查胜利条件（关键修改：存储胜利坐标）
         function checkWin(x, y, color) {
             const directions = [
                 [1, 0],   // 水平
@@ -152,7 +129,7 @@
                 [1, -1]   // 对角线 /
             ];
             
-            winPositions = [];
+            winPositions = []; // 重置
 
             for (let [dx, dy] of directions) {
                 let count = 1;
@@ -192,13 +169,13 @@
             return false;
         }
 
-        // 关键修改2：高亮胜利的5子连珠
+        // 关键修改4：高亮胜利的5子连珠
         function showWinEffect() {
             winPositions.forEach(([x, y]) => {
-                const centerX = BOARD_OFFSET + x * GRID_SIZE;
-                const centerY = BOARD_OFFSET + y * GRID_SIZE;
+                const centerX = 20 + x * 30;
+                const centerY = 20 + y * 30;
                 
-                // 添加高亮效果
+                // 高亮5子连珠
                 ctx.beginPath();
                 ctx.arc(centerX, centerY, 16, 0, Math.PI * 2);
                 ctx.strokeStyle = '#FFD700';
@@ -207,13 +184,27 @@
             });
         }
 
+        // 更新状态显示
+        function updateStatus() {
+            if (gameEnded) {
+                document.getElementById('status').innerText = '游戏已结束';
+                return;
+            }
+            
+            if (currentPlayer === myColor) {
+                document.getElementById('status').innerText = '轮到你落子！';
+            } else {
+                document.getElementById('status').innerText = '等待对手落子...';
+            }
+        }
+
         // 点击事件处理（关键修改：19x19坐标计算）
         canvas.addEventListener('click', (e) => {
             if (!gameStarted || !currentPlayer || currentPlayer !== myColor || gameEnded) return;
 
             const rect = canvas.getBoundingClientRect();
-            const x = Math.round((e.clientX - rect.left - BOARD_OFFSET) / GRID_SIZE);
-            const y = Math.round((e.clientY - rect.top - BOARD_OFFSET) / GRID_SIZE);
+            const x = Math.round((e.clientX - rect.left - 20) / 30);
+            const y = Math.round((e.clientY - rect.top - 20) / 30);
 
             // 修正：确保坐标在0-18范围内
             if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE && !board[y][x]) {
@@ -221,7 +212,7 @@
                 drawChess(x, y, myColor);
 
                 if (checkWin(x, y, myColor)) {
-                    statusElement.innerText = `${myColor === 'black' ? '黑子' : '白子'} 获胜！`;
+                    document.getElementById('status').innerText = `${myColor === 'black' ? '黑子' : '白子'} 获胜！`;
                     gameEnded = true;
                     showWinEffect(); // 显示高亮特效
                     socket.emit('game_over', { winner: myColor, roomId });
@@ -240,20 +231,6 @@
                 });
             }
         });
-
-        // 更新状态显示
-        function updateStatus() {
-            if (gameEnded) {
-                statusElement.innerText = '游戏已结束';
-                return;
-            }
-            
-            if (currentPlayer === myColor) {
-                statusElement.innerText = '轮到你落子！';
-            } else {
-                statusElement.innerText = '等待对手落子...';
-            }
-        }
 
         // 加入房间
         function joinRoom() {
@@ -274,18 +251,35 @@
             socket.emit('join_room', roomId);
         }
 
-        // 初始化
-        drawBoard();
-        updateStatus();
+        // 重置游戏
+        function resetGame() {
+            board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(null));
+            drawBoard();
+            gameStarted = false;
+            currentPlayer = null;
+            gameEnded = false;
+            updateStatus();
+        }
 
         // Socket事件监听
+        socket.on('connect', () => {
+            document.getElementById('status').innerText = '已连接到服务器';
+        });
+
         socket.on('player_assigned', (data) => {
             myColor = data.player;
-            currentPlayer = myColor === 'black' ? 'black' : 'white'; // 黑方先手
+            document.getElementById('playerInfo').innerText = `你是: ${myColor === 'black' ? '黑子' : '白子'}`;
+            
+            // 黑方先手
+            if (myColor === 'black') {
+                currentPlayer = 'black';
+            } else {
+                currentPlayer = 'black';
+            }
             updateStatus();
         });
 
-        socket.on('game_start', () => {
+        socket.on('game_start', (data) => {
             gameStarted = true;
         });
 
@@ -294,9 +288,9 @@
             drawChess(data.x, data.y, data.color);
             
             if (checkWin(data.x, data.y, data.color)) {
-                statusElement.innerText = `${data.color === 'black' ? '黑子' : '白子'} 获胜！`;
+                document.getElementById('status').innerText = `${data.color === 'black' ? '黑子' : '白子'} 获胜！`;
                 gameEnded = true;
-                showWinEffect();
+                showWinEffect(); // 显示高亮特效
             } else {
                 currentPlayer = myColor;
                 updateStatus();
@@ -304,19 +298,22 @@
         });
 
         socket.on('game_ended', (winner) => {
-            statusElement.innerText = `${winner === 'black' ? '黑子' : '白子'} 获胜！`;
+            document.getElementById('status').innerText = `${winner === 'black' ? '黑子' : '白子'} 获胜！`;
             gameEnded = true;
             showWinEffect();
         });
 
         socket.on('opponent_disconnected', () => {
-            statusElement.innerText = '对手已离开，游戏结束';
+            document.getElementById('status').innerText = '对手已离开，游戏结束';
             gameEnded = true;
         });
 
         socket.on('update_status', (msg) => {
-            statusElement.innerText = msg;
+            document.getElementById('status').innerText = msg;
         });
+
+        // 初始化
+        drawBoard();
     </script>
 </body>
 </html>
