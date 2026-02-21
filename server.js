@@ -7,7 +7,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// 存储游戏房间（关键修复：使用房间ID作为键）
+// 存储游戏房间
 const rooms = {};
 
 // 添加 UTF-8 编码设置
@@ -31,7 +31,7 @@ io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => {
         socket.join(roomId);
         
-        // ✅ 修复：使用房间ID作为键，确保房间状态独立
+        // 初始化房间（如果不存在）
         if (!rooms[roomId]) {
             rooms[roomId] = {
                 players: [],
@@ -41,29 +41,30 @@ io.on('connection', (socket) => {
         
         rooms[roomId].players.push(socket.id);
         
-        // 检查房间人数
-        if (rooms[roomId].players.length === 2) {
-            // ✅ 修复：正确发送游戏开始事件
-            io.to(roomId).emit('game_start', {});
-            io.to(roomId).emit('update_status', '游戏开始！');
-            rooms[roomId].started = true;
-        } else {
-            // 分配颜色（黑方先手）
-            const playerColor = rooms[roomId].players.length === 1 ? 'black' : 'white';
-            socket.emit('player_assigned', { player: playerColor });
+        // 分配颜色（黑方先手）
+        if (rooms[roomId].players.length === 1) {
+            // 第一个玩家 = 黑方
+            socket.emit('player_assigned', { player: 'black' });
             io.to(roomId).emit('update_status', '等待对手加入...');
+        } else if (rooms[roomId].players.length === 2) {
+            // 第二个玩家 = 白方
+            socket.emit('player_assigned', { player: 'white' });
+            io.to(roomId).emit('update_status', '游戏已开始，等待黑方落子...');
+            
+            // 通知双方游戏开始
+            io.to(roomId).emit('game_start', {});
+            rooms[roomId].started = true;
         }
     });
 
     // 处理落子事件
     socket.on('make_move', (data) => {
-        // ✅ 修复：确保房间存在
         if (!rooms[data.roomId] || !rooms[data.roomId].started) {
             console.error(`Room ${data.roomId} not started`);
             return;
         }
         
-        // ✅ 修复：发送给房间内所有玩家（包括自己）
+        // 发送给房间内所有玩家（包括自己）
         io.to(data.roomId).emit('opponent_move', {
             x: data.x,
             y: data.y,
@@ -73,7 +74,6 @@ io.on('connection', (socket) => {
 
     // 处理游戏结束
     socket.on('game_over', (data) => {
-        // ✅ 修复：正确发送游戏结束事件
         io.to(data.roomId).emit('game_ended', data.winner);
         delete rooms[data.roomId]; // 清理房间
     });
@@ -81,11 +81,14 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('用户断开连接:', socket.id);
         
-        // ✅ 修复：清理房间状态
+        // 清理房间
         for (let roomId in rooms) {
             const room = rooms[roomId];
             if (room.players.includes(socket.id)) {
+                // 通知对方
                 io.to(roomId).emit('opponent_disconnected');
+                
+                // 清理房间
                 delete rooms[roomId];
                 break;
             }
