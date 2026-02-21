@@ -79,6 +79,7 @@
         let gameStarted = false;
         let myColor = null;
         let roomId = null;
+        let gameEnded = false; // 新增状态
 
         const canvas = document.getElementById('chessboard');
         const ctx = canvas.getContext('2d');
@@ -114,7 +115,7 @@
             ctx.stroke();
         }
 
-        // 检查胜利条件
+        // 检查胜利条件（修复：正确处理5子连珠）
         function checkWin(x, y, color) {
             const directions = [
                 [1, 0],   // 水平
@@ -126,6 +127,7 @@
             for (let [dx, dy] of directions) {
                 let count = 1;
                 
+                // 正向检查
                 for (let i = 1; i <= 4; i++) {
                     const newX = x + dx * i;
                     const newY = y + dy * i;
@@ -137,6 +139,7 @@
                     }
                 }
                 
+                // 反向检查
                 for (let i = 1; i <= 4; i++) {
                     const newX = x - dx * i;
                     const newY = y - dy * i;
@@ -155,7 +158,7 @@
 
         // 点击事件处理
         canvas.addEventListener('click', (e) => {
-            if (!gameStarted || currentPlayer !== myColor) return;
+            if (!gameStarted || !currentPlayer || currentPlayer !== myColor || gameEnded) return;
 
             const rect = canvas.getBoundingClientRect();
             const x = Math.round((e.clientX - rect.left - 20) / 30);
@@ -165,17 +168,19 @@
                 board[y][x] = myColor;
                 drawChess(x, y, myColor);
 
+                // 检查胜利
                 if (checkWin(x, y, myColor)) {
                     document.getElementById('status').innerText = `${myColor === 'black' ? '黑子' : '白子'} 获胜！`;
                     socket.emit('game_over', { winner: myColor, roomId });
-                    gameStarted = false;
+                    gameEnded = true;
                     return;
                 }
 
-                // ✅ 修复：切换为对方颜色（轮到对方落子）
+                // 切换玩家
                 currentPlayer = myColor === 'black' ? 'white' : 'black';
                 document.getElementById('status').innerText = `等待对手落子...`;
                 
+                // 发送移动到服务器
                 socket.emit('make_move', {
                     x: x,
                     y: y,
@@ -209,7 +214,8 @@
             board = Array(15).fill().map(() => Array(15).fill(null));
             drawBoard();
             gameStarted = false;
-            currentPlayer = 'black'; // 重置为黑方先手
+            currentPlayer = 'black';
+            gameEnded = false;
             document.getElementById('status').innerText = '游戏重置，等待对手加入...';
         }
 
@@ -225,8 +231,7 @@
 
         socket.on('game_start', (data) => {
             gameStarted = true;
-            // ✅ 修复：游戏开始时黑方先手
-            currentPlayer = 'black';
+            currentPlayer = 'black'; // 黑方先手
             document.getElementById('status').innerText = '游戏开始！';
         });
 
@@ -236,9 +241,9 @@
             
             if (checkWin(data.x, data.y, data.color)) {
                 document.getElementById('status').innerText = `${data.color === 'black' ? '黑子' : '白子'} 获胜！`;
-                gameStarted = false;
+                gameEnded = true;
             } else {
-                // ✅ 修复：设置为当前玩家颜色（轮到自己落子）
+                // ✅ 修复：正确切换当前玩家
                 currentPlayer = myColor;
                 document.getElementById('status').innerText = `轮到你落子！`;
             }
@@ -246,12 +251,12 @@
 
         socket.on('game_ended', (winner) => {
             document.getElementById('status').innerText = `${winner === 'black' ? '黑子' : '白子'} 获胜！`;
-            gameStarted = false;
+            gameEnded = true;
         });
 
         socket.on('opponent_disconnected', () => {
             document.getElementById('status').innerText = '对手已离开，游戏结束';
-            gameStarted = false;
+            gameEnded = true;
         });
 
         socket.on('update_status', (msg) => {
