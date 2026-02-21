@@ -31,7 +31,7 @@ io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => {
         socket.join(roomId);
         
-        // 初始化房间（如果不存在）
+        // 初始化房间
         if (!rooms[roomId]) {
             rooms[roomId] = {
                 players: [],
@@ -43,11 +43,9 @@ io.on('connection', (socket) => {
         
         // 分配颜色（黑方先手）
         if (rooms[roomId].players.length === 1) {
-            // 第一个玩家 = 黑方
             socket.emit('player_assigned', { player: 'black' });
             io.to(roomId).emit('update_status', '等待对手加入...');
         } else if (rooms[roomId].players.length === 2) {
-            // 第二个玩家 = 白方
             socket.emit('player_assigned', { player: 'white' });
             io.to(roomId).emit('update_status', '游戏已开始，等待黑方落子...');
             
@@ -57,15 +55,15 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 处理落子事件
+    // 处理落子事件（关键修复：使用 socket.broadcast 发送给对手）
     socket.on('make_move', (data) => {
         if (!rooms[data.roomId] || !rooms[data.roomId].started) {
             console.error(`Room ${data.roomId} not started`);
             return;
         }
         
-        // 发送给房间内所有玩家（包括自己）
-        io.to(data.roomId).emit('opponent_move', {
+        // ✅ 重要修复：只发送给对手玩家（不发送给自己）
+        socket.broadcast.to(data.roomId).emit('opponent_move', {
             x: data.x,
             y: data.y,
             color: data.color
@@ -85,10 +83,7 @@ io.on('connection', (socket) => {
         for (let roomId in rooms) {
             const room = rooms[roomId];
             if (room.players.includes(socket.id)) {
-                // 通知对方
                 io.to(roomId).emit('opponent_disconnected');
-                
-                // 清理房间
                 delete rooms[roomId];
                 break;
             }
