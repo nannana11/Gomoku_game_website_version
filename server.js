@@ -10,8 +10,14 @@ const io = socketIo(server);
 // 存储游戏房间
 const rooms = {};
 
-// 静态文件服务
-app.use(express.static(path.join(__dirname, 'public')));
+// ✅ 修复：添加 UTF-8 编码设置
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.html')) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    }
+  }
+}));
 
 // 首页路由
 app.get('/', (req, res) => {
@@ -28,7 +34,8 @@ io.on('connection', (socket) => {
         // 检查房间人数
         const room = io.sockets.adapter.rooms.get(roomId);
         if (room && room.size === 2) {
-            io.to(roomId).emit('game_start', { player: 'white' });
+            // ✅ 修复：游戏开始时黑方先手
+            io.to(roomId).emit('game_start', {});
             io.to(roomId).emit('update_status', '游戏开始！');
         } else {
             socket.emit('player_assigned', { player: 'black' });
@@ -52,7 +59,6 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log('用户断开连接:', socket.id);
-        // 查找用户所在的房间并通知其他玩家
         for (let roomId in rooms) {
             const room = io.sockets.adapter.rooms.get(roomId);
             if (room && room.has(socket.id)) {
